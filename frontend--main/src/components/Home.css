@@ -1,0 +1,20 @@
+/* For small screens like mobile devices
+@media (max-width: 768px) {
+  #homeCarousel .carousel-item img {
+    height: 40vh; /* Smaller height on mobile */
+  }
+}
+
+/* For medium screens like tablets */
+/* @media (min-width: 768px) and (max-width: 1200px) { */
+  /* #homeCarousel .carousel-item img {
+    height: 50vh; /* Adjust the height on medium screens */
+  }
+}
+
+/* For large screens like desktops */
+/* @media (min-width: 1200px) {
+  #homeCarousel .carousel-item img {
+    height: 60vh; /* Larger height for larger screens */
+  }
+} */ */ */
