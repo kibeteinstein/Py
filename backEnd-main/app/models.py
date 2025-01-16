@@ -4,18 +4,23 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from . import db
 
 # Term model
+
 class Term(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
     fees = db.relationship('Fee', back_populates='term', lazy=True)
-
     bus_payments = db.relationship('BusPayment', back_populates='term', lazy=True)
 
     def __repr__(self):
         return f"<Term(name={self.name}, start_date={self.start_date}, end_date={self.end_date})>"
-
+    @classmethod
+    def get_active_term(cls):
+        # Get the current date
+        current_date = datetime.utcnow().date()
+        return cls.query.filter(cls.start_date <= current_date, cls.end_date >= current_date).first()
+    
 # Staff model
 class Staff(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -38,7 +43,9 @@ class Grade(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(10), nullable=False, unique=True)
     term_fees = db.relationship('Fee', back_populates='grade', lazy=True)
+    
 
+    
     def __repr__(self):
         return f"<Grade(name={self.name})>"
 
@@ -52,7 +59,6 @@ class Student(db.Model):
     balance = db.Column(db.Float, default=0.0)
     arrears = db.Column(db.Float, default=0.0)
     prepayment = db.Column(db.Float, default=0.0)
-    term_fee = db.Column(db.Float, nullable=False)
     use_bus = db.Column(db.Boolean, nullable=False, default=False)
     bus_balance = db.Column(db.Float, default=0.0)
     is_boarding = db.Column(db.Boolean, nullable=False, default=False)
@@ -74,7 +80,12 @@ class Student(db.Model):
 
     def initialize_balance(self, term_id):
         """Calculate initial balance for the term."""
-        fee = Fee.query.filter_by(grade_id=self.grade_id, term_id=term_id).first()
+        active_term = Term.get_active_term()
+        if not active_term:
+        # Fallback for when no terms are available
+            self.balance = 0.0
+            return
+        fee = Fee.query.filter_by(grade_id=self.grade_id, term_id=active_term.id).first()
         if not fee:
             raise ValueError("Fee structure not set for this grade and term.")
 
@@ -88,13 +99,31 @@ class Student(db.Model):
         self.prepayment = 0
         db.session.commit()
 
-    def update_payment(self, amount, term_id):
-        """Update student balance, prepayment, and arrears."""
-        self.balance -= amount
-        if self.balance < 0:
-            self.prepayment = -self.balance
-            self.balance = 0
-        db.session.commit()
+        def update_payment(self, amount):
+            """Update student balance, prepayment, and arrears for the current active term."""
+            # Get the current active term
+            active_term = Term.get_active_term()
+            if not active_term:
+                raise ValueError("No active term found.")
+
+            # Handle arrears first
+            if self.arrears > 0:
+                if amount >= self.arrears:
+                    amount -= self.arrears
+                    self.arrears = 0
+                else:
+                    self.arrears -= amount
+                    db.session.commit()
+                    return  # Payment fully applied to arrears
+
+            # Apply remaining amount to the current balance
+            self.balance -= amount
+            if self.balance < 0:
+                self.prepayment = -self.balance  # Convert negative balance to prepayment
+                self.balance = 0
+
+            db.session.commit()
+
 
     def __repr__(self):
         return f"<Student(name={self.name}, balance={self.balance}, arrears={self.arrears})>"
@@ -129,16 +158,37 @@ class Payment(db.Model):
        
 # Fee model for each term and grade
 class Fee(db.Model):
+    __tablename__ = 'fees'
+
     id = db.Column(db.Integer, primary_key=True)
     term_id = db.Column(db.Integer, db.ForeignKey('term.id'), nullable=False)
     grade_id = db.Column(db.Integer, db.ForeignKey('grade.id'), nullable=False)
     amount = db.Column(db.Float, nullable=False)
 
+    # Relationships
     term = db.relationship('Term', back_populates='fees')
     grade = db.relationship('Grade', back_populates='term_fees')
 
+    def to_dict(self):
+        """Convert fee object to dictionary for JSON responses."""
+        return {
+            "id": self.id,
+            "term_id": self.term_id,
+            "term_name": self.term.name,  # Access related term's name
+            "grade_id": self.grade_id,
+            "grade_name": self.grade.name,  # Access related grade's name
+            "amount": self.amount
+        }
+    def get_fee_for_grade_and_term(grade_id, term_id):
+        """Retrieve the fee amount for a specific grade and term."""
+        fee = Fee.query.filter_by(grade_id=grade_id, term_id=term_id).first()
+        if fee:
+            return fee.amount
+        return None
+
     def __repr__(self):
         return f"<Fee(term_id={self.term_id}, grade_id={self.grade_id}, amount={self.amount})>"
+
 
 class BoardingFee(db.Model):
     id = db.Column(db.Integer, primary_key=True)
