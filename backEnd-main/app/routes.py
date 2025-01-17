@@ -43,7 +43,7 @@ def add_student():
         data = request.get_json()
 
         # Validate required fields
-        required_fields = ["name", "admission_number", "grade_id", "phone", "password"]
+        required_fields = ["name", "admission_number", "grade_id", "phone"]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"{field} is required."}), 400
@@ -58,20 +58,20 @@ def add_student():
         if not grade:
             return jsonify({"error": "Grade not found."}), 400
 
-        # Create a new student
+        # Create a new student (without password, balance-related fields will be set later)
         student = Student(
             name=data["name"],
             admission_number=data["admission_number"],
             grade_id=data["grade_id"],
             phone=data["phone"],
-            balance=data.get("balance", 0.0),
-            arrears=data.get("arrears", 0.0),
-            prepayment=data.get("prepayment", 0.0),
+            is_boarding=data.get("is_boarding", False),
             use_bus=data.get("use_bus", False),
             bus_balance=data.get("bus_balance", 0.0),
-            is_boarding=data.get("is_boarding", False),
+            destination_id=data.get("destination_id")
         )
-        student.set_password(data["password"])
+
+        # Set the password to be the admission number
+        student.set_password(data["admission_number"])
 
         # Assign bus destination if 'use_bus' is True
         if data.get("use_bus", False):
@@ -83,7 +83,6 @@ def add_student():
             destination = BusDestination.query.get(destination_id)
             if not destination:
                 return jsonify({"error": "Invalid bus destination."}), 400
-
             student.destination_id = destination.id
 
         # Fetch the active term
@@ -97,6 +96,7 @@ def add_student():
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
+        # Commit student to the database
         db.session.add(student)
         db.session.commit()
 
@@ -106,7 +106,9 @@ def add_student():
         db.session.rollback()
         app.logger.error(f"Error adding student: {e}")
         return jsonify({"error": str(e)}), 500
-        
+        shel
+
+
 @routes.route('/students', methods=['GET'])
 def get_students():
     students = Student.query.all()
@@ -271,7 +273,17 @@ def add_payment():
     except Exception as e:
         return jsonify({"error": "An error occurred while adding payment", "details": str(e)}), 500
 
-
+# Fetch all payments
+@routes.route('/payments', methods=['GET'])
+def get_all_payments():
+    try:
+        payments = Payment.query.all()  # Fetch all payments from the database
+        if not payments:
+            return jsonify({'message': 'No payments found'}), 404
+        return jsonify([payment.to_dict() for payment in payments]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+        
 # Edit Payment
 @routes.route('/payments/<int:payment_id>', methods=['PUT'])
 def edit_payment(payment_id):

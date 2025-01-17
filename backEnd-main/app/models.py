@@ -20,6 +20,14 @@ class Term(db.Model):
         # Get the current date
         current_date = datetime.utcnow().date()
         return cls.query.filter(cls.start_date <= current_date, cls.end_date >= current_date).first()
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "name": self.name,
+        "start_date": self.start_date.isoformat(),
+        "end_date": self.end_date.isoformat()
+    }
+    
     
 # Staff model
 class Staff(db.Model):
@@ -48,6 +56,12 @@ class Grade(db.Model):
     
     def __repr__(self):
         return f"<Grade(name={self.name})>"
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "name": self.name
+    }
+    
 
 # Student model
 class Student(db.Model):
@@ -72,8 +86,9 @@ class Student(db.Model):
     bus_payments = db.relationship('BusPayment', back_populates='student', lazy='dynamic')
     assignments = db.relationship('Assignment', backref='student', lazy=True)
 
-    def set_password(self, password):
-        self.password = generate_password_hash(password)
+    def set_password(self):
+        """Set password to the admission number."""
+        self.password = generate_password_hash(self.admission_number)
 
     def check_password(self, password):
         return check_password_hash(self.password, password)
@@ -82,7 +97,6 @@ class Student(db.Model):
         """Calculate initial balance for the term."""
         active_term = Term.get_active_term()
         if not active_term:
-        # Fallback for when no terms are available
             self.balance = 0.0
             return
         fee = Fee.query.filter_by(grade_id=self.grade_id, term_id=active_term.id).first()
@@ -99,34 +113,48 @@ class Student(db.Model):
         self.prepayment = 0
         db.session.commit()
 
-        def update_payment(self, amount):
-            """Update student balance, prepayment, and arrears for the current active term."""
-            # Get the current active term
-            active_term = Term.get_active_term()
-            if not active_term:
-                raise ValueError("No active term found.")
+    def update_payment(self, amount):
+        """Update student balance, prepayment, and arrears for the current active term."""
+        active_term = Term.get_active_term()
+        if not active_term:
+            raise ValueError("No active term found.")
 
-            # Handle arrears first
-            if self.arrears > 0:
-                if amount >= self.arrears:
-                    amount -= self.arrears
-                    self.arrears = 0
-                else:
-                    self.arrears -= amount
-                    db.session.commit()
-                    return  # Payment fully applied to arrears
+        # Handle arrears first
+        if self.arrears > 0:
+            if amount >= self.arrears:
+                amount -= self.arrears
+                self.arrears = 0
+            else:
+                self.arrears -= amount
+                db.session.commit()
+                return  # Payment fully applied to arrears
 
-            # Apply remaining amount to the current balance
-            self.balance -= amount
-            if self.balance < 0:
-                self.prepayment = -self.balance  # Convert negative balance to prepayment
-                self.balance = 0
+        # Apply remaining amount to the current balance
+        self.balance -= amount
+        if self.balance < 0:
+            self.prepayment = -self.balance  # Convert negative balance to prepayment
+            self.balance = 0
 
-            db.session.commit()
-
+        db.session.commit()
 
     def __repr__(self):
         return f"<Student(name={self.name}, balance={self.balance}, arrears={self.arrears})>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "admission_number": self.admission_number,
+            "grade_id": self.grade_id,
+            "phone": self.phone,
+            "balance": self.balance,
+            "arrears": self.arrears,
+            "prepayment": self.prepayment,
+            "use_bus": self.use_bus,
+            "bus_balance": self.bus_balance,
+            "is_boarding": self.is_boarding,
+            "destination_id": self.destination_id
+        }
         
 # Payment model
 class Payment(db.Model):
@@ -155,6 +183,18 @@ class Payment(db.Model):
 
     def __repr__(self):
         return f"<Payment(student_id={self.student_id}, amount={self.amount}, balance_after_payment={self.balance_after_payment})>"
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "student_id": self.student_id,
+        "amount": self.amount,
+        "date": self.date.isoformat(),
+        "method": self.method,
+        "term_id": self.term_id,
+        "description": self.description,
+        "balance_after_payment": self.balance_after_payment
+    }
+    
        
 # Fee model for each term and grade
 class Fee(db.Model):
@@ -190,13 +230,6 @@ class Fee(db.Model):
         return f"<Fee(term_id={self.term_id}, grade_id={self.grade_id}, amount={self.amount})>"
 
 
-class BoardingFee(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    extra_fee = db.Column(db.Float, nullable=False, default=3500)
-
-    def __repr__(self):
-        return f'<BoardingFee{self.extra_fee}>'
-
 # Assignment model related to multiple students
 class Assignment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -208,6 +241,16 @@ class Assignment(db.Model):
 
     def __repr__(self):
         return f'<Assignment {self.title} for Grade {self.grade_id}>'
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "title": self.title,
+        "grade_id": self.grade_id,
+        "description": self.description,
+        "due_date": self.due_date.isoformat(),
+        "student_id": self.student_id
+    }
+        
 
 # Class model related to staff
 class Class(db.Model):
@@ -221,6 +264,14 @@ class Class(db.Model):
 
     def __repr__(self):
         return f'<Class {self.name}>'
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "name": self.name,
+        "grade_id": self.grade_id,
+        "staff_id": self.staff_id
+    }
+    
 
 # Gallery model for images
 class Gallery(db.Model):
@@ -230,6 +281,13 @@ class Gallery(db.Model):
 
     def __repr__(self):
         return f"<Gallery(image_url={self.image_url}, description={self.description})>"
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "image_url": self.image_url,
+        "description": self.description
+    }
+    
 
 # Bus Destination model
 
@@ -241,6 +299,13 @@ class BusDestination(db.Model):
 
     def __repr__(self):
         return f"<BusDestination(name={self.name}, charge={self.charge})>"
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "name": self.name,
+        "charge": self.charge
+    }
+    
 
 
 class BusPayment(db.Model):
@@ -258,6 +323,17 @@ class BusPayment(db.Model):
     def __repr__(self):
         return f"<BusPayment(student_id={self.student_id}, term_id={self.term_id}, amount={self.amount})>"
 
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "student_id": self.student_id,
+        "term_id": self.term_id,
+        "destination_id": self.destination_id,
+        "amount": self.amount,
+        "payment_date": self.payment_date.isoformat()
+    }
+    
+
     @staticmethod
     def create_payment(student_id, amount):
         # Fetch the current active term based on the current date
@@ -273,14 +349,11 @@ class BusPayment(db.Model):
         student = Student.query.get(student_id)
         if not student or not student.destination_id:
             raise ValueError("Student does not have an assigned bus destination.")
+            
 
         # Create a new bus payment
-        payment = BusPayment(
-            student_id=student_id,
-            term_id=current_term.id,
-            destination_id=student.destination_id,
-            amount=amount
-        )
+        payment = BusPayment(student_id=student_id, term_id=current_term.id, destination_id=student.destination_id, amount=amount)
+    
         db.session.add(payment)
         db.session.commit()
         return payment
@@ -293,6 +366,13 @@ class Notification(db.Model):
 
     def __repr__(self):
         return f'<Notification {self.id} - {self.message}>'
+    def to_dict(self):
+        return {
+        "id": self.id,
+        "message": self.message,
+        "date": self.date.isoformat()
+    }
+    
 
 
 
